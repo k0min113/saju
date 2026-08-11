@@ -10,6 +10,20 @@ const LOADING_STEPS = [
   '해석 문장을 다듬는 중',
 ]
 
+/** 화면에 * 기호가 그대로 안 보이게 마크다운을 정리합니다 */
+function prepareMarkdown(text) {
+  return text
+    // * / - 불릿을 표준 리스트로 통일
+    .replace(/^(\s*)[*•·]\s+/gm, '$1- ')
+    // 굵게(**text**)는 잠시 보호
+    .replace(/\*\*([^*]+)\*\*/g, '§§B§§$1§§/B§§')
+    // 남은 단독 * 제거 (깨진 강조 등)
+    .replace(/\*/g, '')
+    // 굵게 복원
+    .replace(/§§B§§/g, '**')
+    .replace(/§§\/B§§/g, '**')
+}
+
 function App() {
   // ① 이름 — input에 입력한 값이 여기에 저장됩니다
   const [name, setName] = useState('')
@@ -266,7 +280,7 @@ function App() {
             <h2>해석</h2>
           </div>
           <div className="result-body markdown-body">
-            <Markdown>{result}</Markdown>
+            <Markdown>{prepareMarkdown(result)}</Markdown>
           </div>
         </section>
       ) : null}
