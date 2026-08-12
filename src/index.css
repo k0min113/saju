@@ -1,28 +1,32 @@
 :root {
-  --ink: #12181b;
-  --ink-soft: #2f3b42;
-  --paper: #e8ecef;
-  --paper-lift: #f6f9fb;
-  --line: rgba(74, 110, 122, 0.22);
-  --jade: #4a7d88;
-  --jade-deep: #234850;
-  --jade-soft: #9bb8c0;
-  --jade-mist: rgba(74, 125, 136, 0.13);
-  --gold: #9a7d45;
-  --gold-soft: #d8c496;
-  --seal: #8f2d2f;
-  --serif: 'Noto Serif KR', 'Batang', serif;
+  --ink: #10171a;
+  --ink-soft: #3a474d;
+  --paper: #e4ebe8;
+  --paper-lift: #f7faf8;
+  --line: rgba(58, 96, 104, 0.18);
+  --jade: #3f7380;
+  --jade-deep: #1c3d44;
+  --jade-soft: #8fafb6;
+  --jade-mist: rgba(63, 115, 128, 0.11);
+  --gold: #8f7340;
+  --gold-soft: #d4c19a;
+  --gold-line: rgba(143, 115, 64, 0.32);
+  --seal: #7a2a2c;
+  --glass: rgba(255, 252, 248, 0.72);
+  --glass-deep: rgba(244, 248, 246, 0.88);
+  --serif: 'Gowun Batang', 'Noto Serif KR', 'Batang', serif;
   --sans: 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
-  font: 17px/1.65 var(--sans);
+  font: 16.5px/1.7 var(--sans);
   font-weight: 500;
   color: var(--ink-soft);
-  background-color: #dde5e9;
+  background-color: #d5dfdc;
   background-image:
-    radial-gradient(ellipse 70% 45% at 50% -8%, rgba(183, 154, 98, 0.16), transparent 55%),
-    radial-gradient(ellipse 55% 40% at 15% 90%, rgba(74, 125, 136, 0.2), transparent 50%),
-    radial-gradient(ellipse 45% 35% at 95% 20%, rgba(155, 184, 192, 0.28), transparent 45%),
-    linear-gradient(165deg, #f2f6f8 0%, #e3e9ed 48%, #d5dee4 100%);
+    radial-gradient(ellipse 90% 55% at 50% -12%, rgba(212, 193, 154, 0.28), transparent 58%),
+    radial-gradient(ellipse 50% 45% at 8% 85%, rgba(63, 115, 128, 0.22), transparent 52%),
+    radial-gradient(ellipse 42% 38% at 96% 18%, rgba(143, 175, 182, 0.3), transparent 48%),
+    linear-gradient(168deg, #eef3f1 0%, #dfe8e4 46%, #cfdcd7 100%);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -42,7 +46,7 @@ body {
 
 #root {
   position: relative;
-  width: min(680px, 100%);
+  width: min(1040px, 100%);
   margin: 0 auto;
   min-height: 100svh;
 }
@@ -56,4 +60,9 @@ h2 {
 
 p {
   margin: 0;
+}
+
+::selection {
+  background: rgba(143, 115, 64, 0.22);
+  color: var(--jade-deep);
 }
