@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import Markdown from 'react-markdown'
 import { buildSajuPrompt } from './prompt.js'
 import { supabase, hasSupabaseConfig } from './lib/supabase.js'
+import { ProfileModal } from './ProfileModal.jsx'
 import './App.css'
 
 const LOADING_STEPS = [
@@ -10,6 +11,14 @@ const LOADING_STEPS = [
   '기질과 재능을 풀어내는 중',
   '해석 문장을 다듬는 중',
 ]
+
+const EMPTY_PROFILE_DRAFT = {
+  name: '',
+  birthDate: '',
+  birthTime: '',
+  gender: '',
+  calendarType: 'solar',
+}
 
 const GENDER_LABEL = { female: '여자', male: '남자' }
 const CALENDAR_LABEL = { solar: '양력', lunar: '음력' }
@@ -79,6 +88,11 @@ function App() {
   const [authReady, setAuthReady] = useState(false)
   const [profile, setProfile] = useState(null)
   const [profileLoading, setProfileLoading] = useState(false)
+  const [profileModalOpen, setProfileModalOpen] = useState(false)
+  const [profileModalMode, setProfileModalMode] = useState('onboarding')
+  const [profileDraft, setProfileDraft] = useState(EMPTY_PROFILE_DRAFT)
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileError, setProfileError] = useState('')
 
   const [name, setName] = useState('')
   const [birthDate, setBirthDate] = useState('')
@@ -106,7 +120,14 @@ function App() {
   const isEditing = Boolean(selectedId && formOpen && !loading)
   const isViewingSaved = Boolean(selectedId && result && !loading && !formOpen)
   const canSubmit = Boolean(user && name.trim() && birthDate && gender)
-  const hasSavedProfile = Boolean(profile?.name && profile?.birth_date)
+  const hasSavedProfile = Boolean(
+    profile?.name && profile?.birth_date && profile?.gender,
+  )
+  const needsOnboarding = Boolean(
+    user && authReady && !profileLoading && !hasSavedProfile,
+  )
+  const showProfileModal = profileModalOpen || needsOnboarding
+  const activeModalMode = needsOnboarding ? 'onboarding' : profileModalMode
 
   function applyProfileToForm(nextProfile) {
     if (!nextProfile) return
@@ -119,12 +140,37 @@ function App() {
     setCalendarType(nextProfile.calendar_type ?? 'solar')
   }
 
+  function profileToDraft(nextProfile, fallbackName = '') {
+    return {
+      name: nextProfile?.name ?? fallbackName ?? '',
+      birthDate: nextProfile?.birth_date ?? '',
+      birthTime: nextProfile?.birth_time
+        ? String(nextProfile.birth_time).slice(0, 5)
+        : '',
+      gender: nextProfile?.gender ?? '',
+      calendarType: nextProfile?.calendar_type ?? 'solar',
+    }
+  }
+
   function clearFormFields() {
     setName('')
     setBirthDate('')
     setBirthTime('')
     setGender('')
     setCalendarType('solar')
+  }
+
+  function openEditProfile() {
+    setProfileError('')
+    setProfileModalMode('edit')
+    setProfileDraft(profileToDraft(profile))
+    setProfileModalOpen(true)
+  }
+
+  function closeProfileModal() {
+    if (needsOnboarding) return
+    setProfileModalOpen(false)
+    setProfileError('')
   }
 
   useEffect(() => {
@@ -177,6 +223,9 @@ function App() {
       setResult('')
       clearFormFields()
       setFormOpen(true)
+      setProfileModalOpen(false)
+      setProfileDraft(EMPTY_PROFILE_DRAFT)
+      setProfileError('')
       return
     }
 
@@ -205,6 +254,15 @@ function App() {
         setProfile(profileRes.data)
         if (profileRes.data) {
           applyProfileToForm(profileRes.data)
+          setProfileModalOpen(false)
+        } else {
+          const fallbackName =
+            user.user_metadata?.full_name ||
+            user.user_metadata?.name ||
+            ''
+          setProfileDraft(profileToDraft(null, fallbackName))
+          setProfileModalMode('onboarding')
+          setProfileModalOpen(true)
         }
       }
 
@@ -343,14 +401,14 @@ function App() {
     }
   }
 
-  async function upsertUserProfile() {
+  async function upsertUserProfile(source) {
     const profilePayload = {
       id: user.id,
-      name: name.trim(),
-      birth_date: birthDate,
-      birth_time: birthTime || null,
-      gender: gender || null,
-      calendar_type: calendarType,
+      name: source.name.trim(),
+      birth_date: source.birthDate,
+      birth_time: source.birthTime || null,
+      gender: source.gender || null,
+      calendar_type: source.calendarType,
       updated_at: new Date().toISOString(),
     }
 
@@ -365,7 +423,29 @@ function App() {
     }
 
     setProfile(data)
+    applyProfileToForm(data)
     return data
+  }
+
+  async function saveProfileFromModal() {
+    if (!user || !supabase) return
+    setProfileSaving(true)
+    setProfileError('')
+    try {
+      await upsertUserProfile({
+        name: profileDraft.name,
+        birthDate: profileDraft.birthDate,
+        birthTime: profileDraft.birthTime,
+        gender: profileDraft.gender,
+        calendarType: profileDraft.calendarType,
+      })
+      setProfileModalOpen(false)
+      setFormOpen(true)
+    } catch (err) {
+      setProfileError(err?.message || '프로필 저장에 실패했습니다.')
+    } finally {
+      setProfileSaving(false)
+    }
   }
 
   async function handleSubmit(e) {
@@ -429,7 +509,13 @@ function App() {
       setResultReveal((n) => n + 1)
       setFormOpen(false)
 
-      await upsertUserProfile()
+      await upsertUserProfile({
+        name,
+        birthDate,
+        birthTime,
+        gender,
+        calendarType,
+      })
 
       const readingPayload = {
         user_id: user.id,
@@ -487,10 +573,7 @@ function App() {
     <div className="app-shell">
       {!hasSupabaseConfig ? (
         <div className="error" role="alert" style={{ gridColumn: '1 / -1' }}>
-          <p>
-            Vercel에 VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY 환경 변수를 넣고
-            다시 배포해 주세요.
-          </p>
+          <p>Supabase 설정을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>
         </div>
       ) : null}
 
@@ -506,15 +589,25 @@ function App() {
                 <p className="auth-bar__hint">프로필 불러오는 중…</p>
               ) : hasSavedProfile ? (
                 <p className="auth-bar__hint">
-                  저장된 사주 정보: {profile.name} · {profile.birth_date}
+                  {profile.name} · {profile.birth_date}
+                  {profile.gender
+                    ? ` · ${GENDER_LABEL[profile.gender] || profile.gender}`
+                    : ''}
                 </p>
               ) : (
-                <p className="auth-bar__hint">아직 저장된 사주 정보가 없습니다</p>
+                <p className="auth-bar__hint">사주 정보를 먼저 등록해 주세요</p>
               )}
             </div>
-            <button type="button" className="ghost-btn" onClick={logout}>
-              로그아웃
-            </button>
+            <div className="auth-bar__actions">
+              {hasSavedProfile ? (
+                <button type="button" className="ghost-btn" onClick={openEditProfile}>
+                  프로필
+                </button>
+              ) : null}
+              <button type="button" className="ghost-btn" onClick={logout}>
+                로그아웃
+              </button>
+            </div>
           </>
         ) : (
           <>
@@ -662,8 +755,8 @@ function App() {
                   : isEditing
                     ? '정보를 수정한 뒤 다시 풀이하면 기록이 업데이트됩니다.'
                     : hasSavedProfile
-                      ? '저장된 사주 정보를 불러왔어요. 바로 풀이하거나 수정할 수 있어요.'
-                      : '사주 보기 전, 기본 정보를 입력해 주세요.'}
+                      ? '프로필 정보로 바로 사주를 볼 수 있어요.'
+                      : '로그인 후 사주 정보를 등록해 주세요.'}
               </p>
             </header>
 
@@ -677,101 +770,152 @@ function App() {
                 </p>
               ) : null}
 
-              <label className="field">
-                <span>이름</span>
-                <input
-                  ref={nameInputRef}
-                  type="text"
-                  placeholder="이름을 입력하세요"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  autoComplete="name"
-                />
-              </label>
+              {user && hasSavedProfile && !isEditing ? (
+                <section className="profile-summary" aria-label="내 사주 정보">
+                  <div className="profile-summary__mark" aria-hidden="true">
+                    命
+                  </div>
+                  <div className="profile-summary__body">
+                    <p className="profile-summary__label">My Profile</p>
+                    <h3 className="profile-summary__name">{profile.name}</h3>
+                    <p className="profile-summary__meta">
+                      {formatBirthMeta({
+                        birthDate: profile.birth_date,
+                        birthTime: profile.birth_time
+                          ? String(profile.birth_time).slice(0, 5)
+                          : '',
+                        gender: profile.gender,
+                        calendarType: profile.calendar_type,
+                      })}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="ghost-btn"
+                    onClick={openEditProfile}
+                  >
+                    프로필 수정
+                  </button>
+                </section>
+              ) : null}
 
-              <label className="field">
-                <span>생년월일</span>
-                <input
-                  type="date"
-                  value={birthDate}
-                  onChange={(e) => setBirthDate(e.target.value)}
-                  required
-                />
-              </label>
+              {(!hasSavedProfile || isEditing) && user ? (
+                <>
+                  <label className="field">
+                    <span>이름</span>
+                    <input
+                      ref={nameInputRef}
+                      type="text"
+                      placeholder="이름을 입력하세요"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      required
+                      autoComplete="name"
+                    />
+                  </label>
 
-              <label className="field">
-                <span>
-                  태어난 시간 <em className="field-optional">선택</em>
-                </span>
-                <input
-                  type="time"
-                  value={birthTime}
-                  onChange={(e) => setBirthTime(e.target.value)}
-                />
-              </label>
+                  <label className="field">
+                    <span>생년월일</span>
+                    <input
+                      type="date"
+                      value={birthDate}
+                      onChange={(e) => setBirthDate(e.target.value)}
+                      required
+                    />
+                  </label>
 
-              <fieldset className="field field--radio">
-                <legend>성별</legend>
-                <label>
-                  <input
-                    type="radio"
-                    name="gender"
-                    value="female"
-                    checked={gender === 'female'}
-                    onChange={(e) => setGender(e.target.value)}
-                    required
-                  />
-                  여자
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name="gender"
-                    value="male"
-                    checked={gender === 'male'}
-                    onChange={(e) => setGender(e.target.value)}
-                    required
-                  />
-                  남자
-                </label>
-              </fieldset>
+                  <label className="field">
+                    <span>
+                      태어난 시간 <em className="field-optional">선택</em>
+                    </span>
+                    <input
+                      type="time"
+                      value={birthTime}
+                      onChange={(e) => setBirthTime(e.target.value)}
+                    />
+                  </label>
 
-              <label className="field">
-                <span>양력 / 음력</span>
-                <select
-                  value={calendarType}
-                  onChange={(e) => setCalendarType(e.target.value)}
-                >
-                  <option value="solar">양력</option>
-                  <option value="lunar">음력</option>
-                </select>
-              </label>
+                  <fieldset className="field field--radio">
+                    <legend>성별</legend>
+                    <label>
+                      <input
+                        type="radio"
+                        name="gender"
+                        value="female"
+                        checked={gender === 'female'}
+                        onChange={(e) => setGender(e.target.value)}
+                        required
+                      />
+                      여자
+                    </label>
+                    <label>
+                      <input
+                        type="radio"
+                        name="gender"
+                        value="male"
+                        checked={gender === 'male'}
+                        onChange={(e) => setGender(e.target.value)}
+                        required
+                      />
+                      남자
+                    </label>
+                  </fieldset>
+
+                  <label className="field">
+                    <span>양력 / 음력</span>
+                    <select
+                      value={calendarType}
+                      onChange={(e) => setCalendarType(e.target.value)}
+                    >
+                      <option value="solar">양력</option>
+                      <option value="lunar">음력</option>
+                    </select>
+                  </label>
+                </>
+              ) : null}
 
               <p className={`preview${name.trim() ? '' : ' preview--empty'}`}>
                 {name.trim()
                   ? `${name.trim()}님의 사주`
-                  : '이름을 입력하면 미리보기가 나타납니다'}
+                  : '프로필을 등록하면 미리보기가 나타납니다'}
               </p>
 
               {user ? (
-                <button
-                  type="submit"
-                  className={`submit${loading ? ' submit--loading' : ''}`}
-                  disabled={loading || !canSubmit}
-                  aria-busy={loading}
-                >
-                  {loading ? (
-                    <>
-                      <span className="submit-spinner" aria-hidden="true" />
-                      풀이 중...
-                    </>
-                  ) : isEditing ? (
-                    '다시 풀이하고 수정'
-                  ) : (
-                    '내 사주 보기'
-                  )}
-                </button>
+                hasSavedProfile || isEditing ? (
+                  <button
+                    type="submit"
+                    className={`submit${loading ? ' submit--loading' : ''}`}
+                    disabled={loading || !canSubmit}
+                    aria-busy={loading}
+                  >
+                    {loading ? (
+                      <>
+                        <span className="submit-spinner" aria-hidden="true" />
+                        풀이 중...
+                      </>
+                    ) : isEditing ? (
+                      '다시 풀이하고 수정'
+                    ) : (
+                      '내 사주 보기'
+                    )}
+                  </button>
+                ) : (
+                  <div className="login-gate">
+                    <p className="login-gate__text">
+                      사주 정보를 등록하면 바로 풀이를 시작할 수 있어요.
+                    </p>
+                    <button
+                      type="button"
+                      className="new-reading-btn new-reading-btn--inline"
+                      onClick={() => {
+                        setProfileModalMode('onboarding')
+                        setProfileModalOpen(true)
+                      }}
+                    >
+                      정보 등록하기
+                    </button>
+                  </div>
+                )
               ) : (
                 <div className="login-gate">
                   <p className="login-gate__text">
@@ -789,11 +933,11 @@ function App() {
                   className="ghost-btn ghost-btn--block"
                   onClick={startNewReading}
                 >
-                  수정 취소 · 새로 만들기
+                  수정 취소 · 내 프로필로 풀이
                 </button>
               ) : null}
 
-              {user && !canSubmit && !loading ? (
+              {user && isEditing && !canSubmit && !loading ? (
                 <p className="form-hint">
                   이름, 생년월일, 성별을 입력하면 시작할 수 있어요.
                 </p>
@@ -898,6 +1042,17 @@ function App() {
           </section>
         ) : null}
       </main>
+
+      <ProfileModal
+        mode={activeModalMode}
+        open={showProfileModal}
+        draft={profileDraft}
+        onChange={setProfileDraft}
+        onSubmit={saveProfileFromModal}
+        onClose={closeProfileModal}
+        saving={profileSaving}
+        error={profileError}
+      />
     </div>
   )
 }
