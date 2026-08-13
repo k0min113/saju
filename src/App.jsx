@@ -25,6 +25,7 @@ const CALENDAR_LABEL = { solar: '양력', lunar: '음력' }
 const READING_SELECT = `
   id,
   result,
+  share_token,
   created_at,
   user_id,
   users (
@@ -101,6 +102,7 @@ function App() {
   const [calendarType, setCalendarType] = useState('solar')
 
   const [result, setResult] = useState('')
+  const [shareToken, setShareToken] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [loadingStep, setLoadingStep] = useState(0)
@@ -112,10 +114,12 @@ function App() {
   const [resultReveal, setResultReveal] = useState(0)
   const [formOpen, setFormOpen] = useState(true)
   const [busyId, setBusyId] = useState(null)
+  const [toast, setToast] = useState(null)
 
   const resultRef = useRef(null)
   const nameInputRef = useRef(null)
   const formRef = useRef(null)
+  const toastTimerRef = useRef(null)
 
   const isEditing = Boolean(selectedId && formOpen && !loading)
   const isViewingSaved = Boolean(selectedId && result && !loading && !formOpen)
@@ -331,9 +335,32 @@ function App() {
     }
   }
 
+  function showToast(message) {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current)
+    }
+    setToast({ id: Date.now(), message, leaving: false })
+    toastTimerRef.current = setTimeout(() => {
+      setToast((prev) => (prev ? { ...prev, leaving: true } : null))
+      toastTimerRef.current = setTimeout(() => {
+        setToast(null)
+        toastTimerRef.current = null
+      }, 420)
+    }, 2200)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current)
+      }
+    }
+  }, [])
+
   function openReading(reading) {
     const display = readingDisplay(reading)
     setSelectedId(reading.id)
+    setShareToken(reading.share_token || null)
     setName(display.name === '이름 없음' ? '' : display.name)
     setBirthDate(display.birthDate)
     setBirthTime(display.birthTime)
@@ -346,7 +373,20 @@ function App() {
   }
 
   function startNewReading() {
+    const alreadyOnNewPage =
+      formOpen && !selectedId && !result && !loading && !isViewingSaved
+
+    if (alreadyOnNewPage) {
+      showToast('이미 새 사주 화면이 열려 있어요')
+      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      requestAnimationFrame(() => {
+        nameInputRef.current?.focus()
+      })
+      return
+    }
+
     setSelectedId(null)
+    setShareToken(null)
     setResult('')
     setError('')
     setFormOpen(true)
@@ -359,6 +399,7 @@ function App() {
     requestAnimationFrame(() => {
       nameInputRef.current?.focus()
     })
+    showToast('새 사주 화면으로 이동했어요')
   }
 
   function beginEditReading() {
@@ -554,11 +595,38 @@ function App() {
         return [saved, ...without]
       })
       setSelectedId(saved.id)
+      setShareToken(saved.share_token || null)
     } catch (err) {
       setError(err?.message || '사주 해석 요청에 실패했습니다.')
       setFormOpen(true)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function shareCurrentReading() {
+    if (!shareToken) {
+      showToast('공유 링크를 아직 만들 수 없어요')
+      return
+    }
+
+    const url = `${window.location.origin}/result/${shareToken}`
+    const title = name ? `${name}님의 사주 해석` : '사주 해석'
+
+    try {
+      if (typeof navigator.share === 'function') {
+        await navigator.share({ title, text: `${title}을 확인해 보세요`, url })
+        return
+      }
+    } catch (err) {
+      if (err?.name === 'AbortError') return
+    }
+
+    try {
+      await navigator.clipboard.writeText(url)
+      showToast('공유 링크를 복사했어요')
+    } catch {
+      showToast(url)
     }
   }
 
@@ -714,6 +782,14 @@ function App() {
               {resultMeta ? <p className="view-banner__meta">{resultMeta}</p> : null}
             </div>
             <div className="view-banner__actions">
+              <button
+                type="button"
+                className="share-btn"
+                onClick={shareCurrentReading}
+                disabled={!shareToken}
+              >
+                공유하기
+              </button>
               <button type="button" className="ghost-btn" onClick={beginEditReading}>
                 수정하기
               </button>
@@ -1016,6 +1092,11 @@ function App() {
               <Markdown>{prepareMarkdown(result)}</Markdown>
             </div>
             <div className="result-actions">
+              {shareToken ? (
+                <button type="button" className="share-btn" onClick={shareCurrentReading}>
+                  공유하기
+                </button>
+              ) : null}
               {selectedId ? (
                 <>
                   <button type="button" className="ghost-btn" onClick={beginEditReading}>
@@ -1053,6 +1134,17 @@ function App() {
         saving={profileSaving}
         error={profileError}
       />
+
+      {toast ? (
+        <div
+          className={toast.leaving ? 'app-toast is-leaving' : 'app-toast'}
+          role="status"
+          aria-live="polite"
+          key={toast.id}
+        >
+          {toast.message}
+        </div>
+      ) : null}
     </div>
   )
 }
